@@ -13,9 +13,11 @@ python deploy.py \
   --ai-provider kimi-coding \
   --ai-key "<客戶的 AI API Key>" \
   --telegram-token "<客戶的 Telegram Bot Token>" \
-  --subdomain "<客戶想要的子域名>" \
-  --dm-policy open
+  --telegram-user-id "<客戶的 Telegram User ID>" \
+  --subdomain "<客戶想要的子域名>"
 ```
+
+> **安全預設**：`--dm-policy` 預設為 `allowlist`，只有 `--telegram-user-id` 指定的用戶可以私訊 Bot。**嚴禁使用 `--dm-policy open`**，否則任何人都能使用客戶的 AI 額度。
 
 deploy.py 會自動完成所有 9 個步驟。以下是每個步驟的說明，供你在自動化腳本失敗時手動排除問題。
 
@@ -29,6 +31,7 @@ deploy.py 會自動完成所有 9 個步驟。以下是每個步驟的說明，�
 | Zeabur 專用伺服器 | 已建立 | zeabur.com → Servers → 新增專用伺服器 |
 | AI API Key | 見下方 | 各 AI 平台申請 |
 | Telegram Bot Token | `123456789:AABBCC` | Telegram @BotFather → /newbot |
+| Telegram User ID | `6005789080`（純數字） | Telegram 搜尋 @userinfobot 或 @raw_data_bot，發送任意訊息即可取得 |
 
 ### AI Provider 對照表（重要！）
 
@@ -108,18 +111,18 @@ OpenClaw 的 model 和 DM 策略**無法透過環境變數設定**，必須在�
 sh -c "mkdir -p /root/.openclaw && echo '<CONFIG_JSON>' > /root/.openclaw/openclaw.json && node dist/index.js gateway --allow-unconfigured --bind lan"
 ```
 
-Config JSON 範例（Kimi Coding + open DM）：
+Config JSON 範例（Kimi Coding + allowlist DM，安全預設）：
 ```json
 {
   "agents": { "defaults": { "model": { "primary": "kimi-coding/k2p5" } } },
-  "channels": { "telegram": { "dmPolicy": "open", "allowFrom": ["*"] } }
+  "channels": { "telegram": { "dmPolicy": "allowlist", "allowFrom": ["<TELEGRAM_USER_ID>"] } }
 }
 ```
 
 DM 策略選項：
-- `pairing`（預設）— 新用戶需配對碼，管理員核准
-- `open` — 任何人都可以直接跟 bot 對話
-- `allowlist` — 只有白名單上的人可以對話
+- `allowlist`（**預設，強烈建議**）— 只有白名單上的 Telegram User ID 可以對話，防止他人盜用 AI 額度
+- `pairing` — 新用戶需配對碼，管理員核准
+- `open` — ⚠️ **不建議**：任何人都可以直接跟 bot 對話，會消耗客戶的 AI API 額度
 - `disabled` — 關閉私訊
 
 GraphQL mutation（注意：`updateServiceCommand` 不需要 environmentID）：

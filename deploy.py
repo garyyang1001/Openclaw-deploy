@@ -204,7 +204,7 @@ def configure_service(
         set_env_var(token, service_id, env_id, "DISCORD_BOT_TOKEN", discord_token)
 
 
-def build_start_command(ai_provider: str = None, dm_policy: str = "pairing") -> str:
+def build_start_command(ai_provider: str = None, dm_policy: str = "allowlist", telegram_user_id: str = None) -> str:
     """Build the start command with embedded config generation."""
     config = {"agents": {"defaults": {"model": {}}}}
 
@@ -223,27 +223,36 @@ def build_start_command(ai_provider: str = None, dm_policy: str = "pairing") -> 
     model = model_map.get(ai_provider, "kimi-coding/k2p5") if ai_provider else "kimi-coding/k2p5"
     config["agents"]["defaults"]["model"]["primary"] = model
 
-    # Set Telegram DM policy
+    # Set Telegram DM policy (default: allowlist for security)
     config["channels"] = {"telegram": {"dmPolicy": dm_policy}}
     if dm_policy == "open":
         config["channels"]["telegram"]["allowFrom"] = ["*"]
+    elif dm_policy == "allowlist":
+        if telegram_user_id:
+            config["channels"]["telegram"]["allowFrom"] = [telegram_user_id]
+        else:
+            # No user ID provided — fall back to empty allowlist (nobody can DM)
+            config["channels"]["telegram"]["allowFrom"] = []
+            print("  Warning: allowlist policy but no --telegram-user-id provided. Nobody will be able to DM the bot.")
 
     config_json = json.dumps(config).replace('"', '\\"')
     return f'sh -c "mkdir -p /root/.openclaw && echo \\"{config_json}\\" > /root/.openclaw/openclaw.json && {GATEWAY_CMD}"'
 
 
-def set_start_command(token: str, service_id: str, ai_provider: str = None, dm_policy: str = "pairing"):
+def set_start_command(token: str, service_id: str, ai_provider: str = None, dm_policy: str = "allowlist", telegram_user_id: str = None):
     """Step 6: Set startup command with config."""
     step(6, "Setting Start Command")
-    command = build_start_command(ai_provider, dm_policy)
+    command = build_start_command(ai_provider, dm_policy, telegram_user_id)
     # Escape for GraphQL
     cmd_escaped = command.replace("\\", "\\\\").replace('"', '\\"')
     gql(
         token,
         f'mutation{{updateServiceCommand(serviceID:"{service_id}",command:"{cmd_escaped}")}}',
     )
-    print(f"  Model: {ai_provider or 'moonshot'}")
+    print(f"  Model: {ai_provider or 'kimi-coding'}")
     print(f"  DM Policy: {dm_policy}")
+    if dm_policy == "allowlist" and telegram_user_id:
+        print(f"  Allowed User: {telegram_user_id}")
     print(f"  Gateway: --bind lan --allow-unconfigured")
 
 
@@ -338,8 +347,9 @@ def main():
     parser.add_argument("--telegram-token", help="Telegram Bot token")
     parser.add_argument("--discord-token", help="Discord Bot token")
     parser.add_argument("--subdomain", help="Subdomain for zeabur.app (auto-generated if omitted)")
-    parser.add_argument("--dm-policy", default="pairing", choices=["pairing", "open", "allowlist", "disabled"],
-                        help="Telegram DM access policy (default: pairing)")
+    parser.add_argument("--dm-policy", default="allowlist", choices=["pairing", "open", "allowlist", "disabled"],
+                        help="Telegram DM access policy (default: allowlist — only specified user can DM)")
+    parser.add_argument("--telegram-user-id", help="Telegram user ID for allowlist DM policy (required when dm-policy=allowlist)")
     parser.add_argument("--env-file", help="Load settings from .env file")
 
     args = parser.parse_args()
@@ -357,6 +367,7 @@ def main():
         args.gateway_token = args.gateway_token or os.environ.get("GATEWAY_TOKEN")
         args.ai_key = args.ai_key or os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
         args.telegram_token = args.telegram_token or os.environ.get("TELEGRAM_BOT_TOKEN")
+        args.telegram_user_id = args.telegram_user_id or os.environ.get("TELEGRAM_USER_ID")
         args.subdomain = args.subdomain or os.environ.get("SUBDOMAIN")
         if os.environ.get("KIMI_API_KEY"):
             args.ai_provider = args.ai_provider or "kimi-coding"
@@ -410,7 +421,7 @@ def main():
         )
 
         # Step 6: Set start command with config
-        set_start_command(args.zeabur_token, ids["service_id"], args.ai_provider, args.dm_policy)
+        set_start_command(args.zeabur_token, ids["service_id"], args.ai_provider, args.dm_policy, args.telegram_user_id)
 
         # Step 7: Restart
         restart_service(args.zeabur_token, ids["service_id"], ids["environment_id"])

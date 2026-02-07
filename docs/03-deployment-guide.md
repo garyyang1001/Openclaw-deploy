@@ -13,6 +13,7 @@
 | Zeabur 專用伺服器 | 客戶帳號內需有一台專用伺服器 |
 | AI API Key | 客戶提供（Kimi K2.5 / Claude / OpenAI） |
 | 通訊平台 Token | 客戶提供（Telegram Bot Token 等） |
+| Telegram User ID | 客戶的 Telegram 數字 ID（用於 allowlist 安全限制） |
 
 ## 架構
 
@@ -137,12 +138,14 @@ curl -s -X POST ... key:\"TELEGRAM_BOT_TOKEN\",value:\"<TOKEN>\"
 
 啟動指令需要先產生 `openclaw.json` 設定檔來指定 AI 模型和 Telegram DM 策略，再啟動 gateway。
 
-**Kimi Coding 國際版（推薦）：**
+**Kimi Coding 國際版（推薦，安全預設 allowlist）：**
 
 ```bash
-# 啟動指令會自動生成設定檔
-sh -c "mkdir -p /root/.openclaw && echo '{\"agents\":{\"defaults\":{\"model\":{\"primary\":\"kimi-coding/k2p5\"}}},\"channels\":{\"telegram\":{\"dmPolicy\":\"open\",\"allowFrom\":[\"*\"]}}}' > /root/.openclaw/openclaw.json && node dist/index.js gateway --allow-unconfigured --bind lan"
+# 啟動指令會自動生成設定檔（allowlist 限制只有指定用戶可以私訊）
+sh -c "mkdir -p /root/.openclaw && echo '{\"agents\":{\"defaults\":{\"model\":{\"primary\":\"kimi-coding/k2p5\"}}},\"channels\":{\"telegram\":{\"dmPolicy\":\"allowlist\",\"allowFrom\":[\"<TELEGRAM_USER_ID>\"]}}}' > /root/.openclaw/openclaw.json && node dist/index.js gateway --allow-unconfigured --bind lan"
 ```
+
+> **安全提醒**：`<TELEGRAM_USER_ID>` 替換為客戶的 Telegram 數字 ID。預設使用 `allowlist` 策略，確保只有客戶本人可以使用 Bot，避免他人盜用 AI API 額度。
 
 **其他 AI Provider 範例：**
 
