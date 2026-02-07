@@ -29,7 +29,7 @@ except ImportError:
 
 API_URL = "https://api.zeabur.com/graphql"
 OPENCLAW_IMAGE = "ghcr.io/openclaw/openclaw:2026.2.2"
-START_COMMAND = "node dist/index.js gateway --allow-unconfigured --bind lan"
+GATEWAY_CMD = "node dist/index.js gateway --allow-unconfigured --bind lan"
 
 
 def gql(token: str, query: str) -> dict:
@@ -203,14 +203,44 @@ def configure_service(
         set_env_var(token, service_id, env_id, "DISCORD_BOT_TOKEN", discord_token)
 
 
-def set_start_command(token: str, service_id: str):
-    """Step 6: Set startup command."""
+def build_start_command(ai_provider: str = None, dm_policy: str = "pairing") -> str:
+    """Build the start command with embedded config generation."""
+    config = {"agents": {"defaults": {"model": {}}}}
+
+    # Set primary model based on AI provider
+    model_map = {
+        "moonshot": "moonshot/kimi-k2.5",
+        "kimi": "moonshot/kimi-k2.5",
+        "anthropic": "anthropic/claude-sonnet-4-5",
+        "claude": "anthropic/claude-sonnet-4-5",
+        "openai": "openai/gpt-4o",
+        "gemini": "google/gemini-2.5-pro",
+    }
+    model = model_map.get(ai_provider, "moonshot/kimi-k2.5") if ai_provider else "moonshot/kimi-k2.5"
+    config["agents"]["defaults"]["model"]["primary"] = model
+
+    # Set Telegram DM policy
+    config["channels"] = {"telegram": {"dmPolicy": dm_policy}}
+    if dm_policy == "open":
+        config["channels"]["telegram"]["allowFrom"] = ["*"]
+
+    config_json = json.dumps(config).replace('"', '\\"')
+    return f'sh -c "mkdir -p /root/.openclaw && echo \\"{config_json}\\" > /root/.openclaw/openclaw.json && {GATEWAY_CMD}"'
+
+
+def set_start_command(token: str, service_id: str, ai_provider: str = None, dm_policy: str = "pairing"):
+    """Step 6: Set startup command with config."""
     step(6, "Setting Start Command")
+    command = build_start_command(ai_provider, dm_policy)
+    # Escape for GraphQL
+    cmd_escaped = command.replace("\\", "\\\\").replace('"', '\\"')
     gql(
         token,
-        f'mutation{{updateServiceCommand(serviceID:"{service_id}",command:"{START_COMMAND}")}}',
+        f'mutation{{updateServiceCommand(serviceID:"{service_id}",command:"{cmd_escaped}")}}',
     )
-    print(f"  Command: {START_COMMAND}")
+    print(f"  Model: {ai_provider or 'moonshot'}")
+    print(f"  DM Policy: {dm_policy}")
+    print(f"  Gateway: --bind lan --allow-unconfigured")
 
 
 def restart_service(token: str, service_id: str, env_id: str):
@@ -304,6 +334,8 @@ def main():
     parser.add_argument("--telegram-token", help="Telegram Bot token")
     parser.add_argument("--discord-token", help="Discord Bot token")
     parser.add_argument("--subdomain", help="Subdomain for zeabur.app (auto-generated if omitted)")
+    parser.add_argument("--dm-policy", default="pairing", choices=["pairing", "open", "allowlist", "disabled"],
+                        help="Telegram DM access policy (default: pairing)")
     parser.add_argument("--env-file", help="Load settings from .env file")
 
     args = parser.parse_args()
@@ -371,8 +403,8 @@ def main():
             args.discord_token,
         )
 
-        # Step 6: Set start command
-        set_start_command(args.zeabur_token, ids["service_id"])
+        # Step 6: Set start command with config
+        set_start_command(args.zeabur_token, ids["service_id"], args.ai_provider, args.dm_policy)
 
         # Step 7: Restart
         restart_service(args.zeabur_token, ids["service_id"], ids["environment_id"])
