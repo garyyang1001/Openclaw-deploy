@@ -1,0 +1,22 @@
+apiVersion: zeabur.com/v1
+kind: Template
+metadata:
+    name: OpenClaw-EasyClaw
+spec:
+    description: OpenClaw AI Assistant deployed by EasyClaw
+    services:
+        - name: openclaw
+          template: PREBUILT
+          spec:
+            source:
+                image: ghcr.io/openclaw/openclaw:2026.2.2
+            ports:
+                - id: web
+                  port: 3000
+                  type: HTTP
+            env:
+                NODE_ENV:
+                    default: production
+            volumes:
+                - id: openclaw-data
+                  dir: /home/node/.openclaw
