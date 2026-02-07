@@ -30,7 +30,7 @@ pip install requests
 python deploy.py \
   --zeabur-token "sk-xxx" \
   --gateway-token "your-random-32char-token-here123" \
-  --ai-provider moonshot \
+  --ai-provider kimi-coding \
   --ai-key "sk-kimi-xxx" \
   --telegram-token "123:ABC" \
   --subdomain "my-assistant"
@@ -87,19 +87,36 @@ server-<serverID>
 | `OPENCLAW_GATEWAY_TOKEN` | 是 | Gateway 認證 Token（>=32 字元） |
 | `OPENCLAW_GATEWAY_PORT` | 是 | 必須設為 `3000`（Zeabur 預期） |
 | `TELEGRAM_BOT_TOKEN` | 否 | Telegram Bot Token |
-| `MOONSHOT_API_KEY` | 否 | Kimi K2.5 API Key |
+| `KIMI_API_KEY` | 否 | Kimi Coding 國際版 API Key（`sk-kimi-*`） |
+| `MOONSHOT_API_KEY` | 否 | Moonshot Open Platform API Key（中國版） |
 | `ANTHROPIC_API_KEY` | 否 | Claude API Key |
 | `OPENAI_API_KEY` | 否 | OpenAI API Key |
 
 ### 啟動指令
 
-```
-node dist/index.js gateway --allow-unconfigured --bind lan
+啟動前需透過 config 檔指定 AI 模型（無法用 env var 設定）：
+
+```bash
+sh -c "mkdir -p /root/.openclaw && \
+  echo '{\"agents\":{\"defaults\":{\"model\":{\"primary\":\"kimi-coding/k2p5\"}}},\"channels\":{\"telegram\":{\"dmPolicy\":\"open\",\"allowFrom\":[\"*\"]}}}' \
+  > /root/.openclaw/openclaw.json && \
+  node dist/index.js gateway --allow-unconfigured --bind lan"
 ```
 
 - `--bind lan`：綁定 0.0.0.0（必要，否則 Zeabur ingress 無法路由）
 - `--allow-unconfigured`：跳過 onboard 設定流程
 - Port 由 `OPENCLAW_GATEWAY_PORT` 控制（非 `--port` 參數）
+- Model 由 config 檔 `openclaw.json` 控制（`deploy.py` 會自動處理）
+
+### AI Provider 對照表
+
+| Provider | `--ai-provider` 參數 | Env Var | Model |
+|----------|----------------------|---------|-------|
+| **Kimi Coding 國際版** | `kimi-coding` | `KIMI_API_KEY` | `kimi-coding/k2p5` |
+| Moonshot 中國版 | `moonshot` | `MOONSHOT_API_KEY` | `moonshot/kimi-k2.5` |
+| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `anthropic/claude-sonnet-4-5` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `openai/gpt-4o` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` | `google/gemini-2.5-pro` |
 
 ## 常見問題
 

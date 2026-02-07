@@ -5,7 +5,7 @@ Deploys OpenClaw AI assistant to a Zeabur dedicated server via GraphQL API.
 
 Usage:
     python deploy.py --zeabur-token "sk-xxx" --gateway-token "random32chars" \
-        --ai-provider moonshot --ai-key "sk-kimi-xxx" \
+        --ai-provider kimi-coding --ai-key "sk-kimi-xxx" \
         --telegram-token "123:ABC" --subdomain "my-bot"
 
 Or with .env file:
@@ -180,8 +180,9 @@ def configure_service(
     # AI provider
     if ai_provider and ai_key:
         provider_map = {
+            "kimi-coding": "KIMI_API_KEY",
+            "kimi": "KIMI_API_KEY",
             "moonshot": "MOONSHOT_API_KEY",
-            "kimi": "MOONSHOT_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
             "claude": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
@@ -208,15 +209,18 @@ def build_start_command(ai_provider: str = None, dm_policy: str = "pairing") -> 
     config = {"agents": {"defaults": {"model": {}}}}
 
     # Set primary model based on AI provider
+    # kimi-coding = Kimi Coding 國際版 (api.kimi.com, Anthropic-compatible)
+    # moonshot = Moonshot Open Platform (api.moonshot.ai, OpenAI-compatible)
     model_map = {
+        "kimi-coding": "kimi-coding/k2p5",
+        "kimi": "kimi-coding/k2p5",
         "moonshot": "moonshot/kimi-k2.5",
-        "kimi": "moonshot/kimi-k2.5",
         "anthropic": "anthropic/claude-sonnet-4-5",
         "claude": "anthropic/claude-sonnet-4-5",
         "openai": "openai/gpt-4o",
         "gemini": "google/gemini-2.5-pro",
     }
-    model = model_map.get(ai_provider, "moonshot/kimi-k2.5") if ai_provider else "moonshot/kimi-k2.5"
+    model = model_map.get(ai_provider, "kimi-coding/k2p5") if ai_provider else "kimi-coding/k2p5"
     config["agents"]["defaults"]["model"]["primary"] = model
 
     # Set Telegram DM policy
@@ -329,7 +333,7 @@ def main():
     parser.add_argument("--zeabur-token", required=True, help="Zeabur API token (sk-xxx)")
     parser.add_argument("--gateway-token", help="Gateway auth token (>=32 chars, auto-generated if omitted)")
     parser.add_argument("--project-name", default="openclaw", help="Project name (default: openclaw)")
-    parser.add_argument("--ai-provider", help="AI provider: moonshot, anthropic, openai, gemini, groq")
+    parser.add_argument("--ai-provider", help="AI provider: kimi-coding, moonshot, anthropic, openai, gemini, groq")
     parser.add_argument("--ai-key", help="AI provider API key")
     parser.add_argument("--telegram-token", help="Telegram Bot token")
     parser.add_argument("--discord-token", help="Discord Bot token")
@@ -351,10 +355,12 @@ def main():
                     os.environ[key.strip()] = value.strip()
         args.zeabur_token = args.zeabur_token or os.environ.get("ZEABUR_TOKEN")
         args.gateway_token = args.gateway_token or os.environ.get("GATEWAY_TOKEN")
-        args.ai_key = args.ai_key or os.environ.get("MOONSHOT_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        args.ai_key = args.ai_key or os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
         args.telegram_token = args.telegram_token or os.environ.get("TELEGRAM_BOT_TOKEN")
         args.subdomain = args.subdomain or os.environ.get("SUBDOMAIN")
-        if os.environ.get("MOONSHOT_API_KEY"):
+        if os.environ.get("KIMI_API_KEY"):
+            args.ai_provider = args.ai_provider or "kimi-coding"
+        elif os.environ.get("MOONSHOT_API_KEY"):
             args.ai_provider = args.ai_provider or "moonshot"
         elif os.environ.get("ANTHROPIC_API_KEY"):
             args.ai_provider = args.ai_provider or "anthropic"

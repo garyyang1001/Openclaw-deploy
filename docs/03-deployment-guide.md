@@ -119,7 +119,9 @@ curl -s -X POST https://api.zeabur.com/graphql \
   -d '{"query":"mutation{createEnvironmentVariable(serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\",key:\"OPENCLAW_GATEWAY_PORT\",value:\"3000\"){key}}"}'
 
 # 3. AI API Key（依客戶選擇的模型）
-# Moonshot/Kimi:
+# Kimi Coding 國際版 (sk-kimi-* keys, 推薦):
+curl -s -X POST ... key:\"KIMI_API_KEY\",value:\"<KEY>\"
+# Moonshot Open Platform 中國版 (sk-* keys):
 curl -s -X POST ... key:\"MOONSHOT_API_KEY\",value:\"<KEY>\"
 # Anthropic:
 curl -s -X POST ... key:\"ANTHROPIC_API_KEY\",value:\"<KEY>\"
@@ -131,19 +133,33 @@ curl -s -X POST ... key:\"OPENAI_API_KEY\",value:\"<KEY>\"
 curl -s -X POST ... key:\"TELEGRAM_BOT_TOKEN\",value:\"<TOKEN>\"
 ```
 
-### Step 6: 設定啟動指令
+### Step 6: 設定啟動指令（含 config 生成）
+
+啟動指令需要先產生 `openclaw.json` 設定檔來指定 AI 模型和 Telegram DM 策略，再啟動 gateway。
+
+**Kimi Coding 國際版（推薦）：**
 
 ```bash
-curl -s -X POST https://api.zeabur.com/graphql \
-  -H "Authorization: Bearer <ZEABUR_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"mutation{updateServiceCommand(serviceID:\"<SERVICE_ID>\",command:\"node dist/index.js gateway --allow-unconfigured --bind lan\")}"}'
+# 啟動指令會自動生成設定檔
+sh -c "mkdir -p /root/.openclaw && echo '{\"agents\":{\"defaults\":{\"model\":{\"primary\":\"kimi-coding/k2p5\"}}},\"channels\":{\"telegram\":{\"dmPolicy\":\"open\",\"allowFrom\":[\"*\"]}}}' > /root/.openclaw/openclaw.json && node dist/index.js gateway --allow-unconfigured --bind lan"
 ```
+
+**其他 AI Provider 範例：**
+
+| Provider | Model 值 | Env Var |
+|----------|----------|---------|
+| Kimi Coding 國際版 | `kimi-coding/k2p5` | `KIMI_API_KEY` |
+| Moonshot 中國版 | `moonshot/kimi-k2.5` | `MOONSHOT_API_KEY` |
+| Anthropic Claude | `anthropic/claude-sonnet-4-5` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
+
+使用 `deploy.py` 會自動根據 `--ai-provider` 參數產生正確的啟動指令。
 
 **關鍵參數說明：**
 - `--allow-unconfigured`：允許在沒有 onboard 設定的情況下啟動
 - `--bind lan`：綁定 0.0.0.0，讓 Zeabur ingress 可以路由流量
 - Port 3000 由 `OPENCLAW_GATEWAY_PORT` 環境變數控制（Dockerfile 預設 18789）
+- Model 和 DM 策略無法透過 env var 設定，必須透過 config 檔（`/root/.openclaw/openclaw.json`）
 
 ### Step 7: 重啟服務
 
@@ -222,7 +238,14 @@ curl -s "https://<SUBDOMAIN>.zeabur.app/" -w "\nHTTP: %{http_code}\n"
 - **原因**：`isGenerated: true` 時只需傳子域名部分（如 `myapp`），不是完整域名（`myapp.zeabur.app`）
 - **解法**：先用 `checkDomainAvailable` 驗證，再用正確格式呼叫 `addDomain`
 
-### 問題 5: Zeabur Shared Cluster 拒絕 OpenClaw
+### 問題 5: HTTP 401 Invalid Authentication — Kimi API Key 設定錯誤
+- **症狀**：Telegram Bot 回覆 `HTTP 401: Invalid Authentication`
+- **原因**：Kimi 有兩個不同平台，API Key 和 endpoint 不同：
+  - **Kimi Coding 國際版**：key 格式 `sk-kimi-*`，env var `KIMI_API_KEY`，model `kimi-coding/k2p5`
+  - **Moonshot Open Platform 中國版**：key 格式 `sk-*`（無 kimi），env var `MOONSHOT_API_KEY`，model `moonshot/kimi-k2.5`
+- **解法**：確認 key 格式，使用對應的 env var 名稱和 model 名稱。`sk-kimi-*` 開頭的 key 必須用 `KIMI_API_KEY` + `kimi-coding/k2p5`
+
+### 問題 6: Zeabur Shared Cluster 拒絕 OpenClaw
 - **症狀**：`REQUIRE_DEDICATED_SERVER` 錯誤
 - **原因**：OpenClaw Docker image 被 Zeabur 標記為需要專用伺服器
 - **解法**：建立專案時使用 `region: "server-<serverID>"` 指定專用伺服器

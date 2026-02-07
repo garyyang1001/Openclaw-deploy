@@ -60,7 +60,7 @@ Bot：你好，你好嗎？
 
 ```
 /model list
-→ 1. moonshot/kimi-k2.5 (目前使用)
+→ 1. kimi-coding/k2p5 (目前使用)
 → 2. anthropic/claude-opus-4-5
 → 3. openai/gpt-4o
 
@@ -178,7 +178,7 @@ Bot：已設定每日 09:00 提醒
 
 | 模型 | 特色 | 適合場景 |
 |------|------|----------|
-| Kimi K2.5 | 256K 超長上下文 | 長文件分析、日常對話 |
+| Kimi K2.5（Kimi Coding 國際版） | 256K 超長上下文 | 長文件分析、日常對話 |
 | Kimi K2-thinking | 深度思考 | 複雜推理、數學 |
 | Claude Opus 4.6 | 最強綜合能力 | 程式設計、創意寫作 |
 | Claude Sonnet 4.5 | 速度與品質平衡 | 一般對話、工作協助 |
