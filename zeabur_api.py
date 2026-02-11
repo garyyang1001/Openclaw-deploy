@@ -81,11 +81,11 @@ class ZeaburClient:
             f'mutation{{createEnvironmentVariable(serviceID:"{service_id}",environmentID:"{env_id}",key:"{key}",value:"{value_escaped}"){{key value}}}}'
         )["createEnvironmentVariable"]
 
-    def update_env(self, service_id: str, env_id: str, key: str, value: str) -> dict:
+    def update_env(self, service_id: str, env_id: str, key: str, value: str):
         """Update an existing environment variable."""
         value_escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return self._gql(
-            f'mutation{{updateEnvironmentVariable(serviceID:"{service_id}",environmentID:"{env_id}",key:"{key}",value:"{value_escaped}"){{key value}}}}'
+            f'mutation{{updateEnvironmentVariable(serviceID:"{service_id}",environmentID:"{env_id}",data:{{{key}:"{value_escaped}"}})}}'
         )["updateEnvironmentVariable"]
 
     # === Domains ===

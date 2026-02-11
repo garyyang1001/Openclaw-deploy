@@ -92,21 +92,28 @@ server-<serverID>
 | `ANTHROPIC_API_KEY` | 否 | Claude API Key |
 | `OPENAI_API_KEY` | 否 | OpenAI API Key |
 
-### 啟動指令
-
-啟動前需透過 config 檔指定 AI 模型（無法用 env var 設定）：
+### 啟動指令（概念示意）
 
 ```bash
-sh -c "mkdir -p /root/.openclaw && \
-  echo '{\"agents\":{\"defaults\":{\"model\":{\"primary\":\"kimi-coding/k2p5\"}}},\"channels\":{\"telegram\":{\"dmPolicy\":\"open\",\"allowFrom\":[\"*\"]}}}' \
-  > /root/.openclaw/openclaw.json && \
-  node dist/index.js gateway --allow-unconfigured --bind lan"
+sh -c "\
+  export OPENCLAW_HOME=/home/node && \
+  export OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json && \
+  export OPENCLAW_STATE_DIR=/home/node/.openclaw && \
+  export OPENCLAW_GATEWAY_TOKEN=your-token && \
+  mkdir -p /home/node/.openclaw/credentials/telegram && \
+  mkdir -p /home/node/.openclaw/agents/main/agent && \
+  echo <base64_config> | base64 -d > /home/node/.openclaw/openclaw.json && \
+  echo <base64_bot_token> | base64 -d > /home/node/.openclaw/credentials/telegram/botToken && \
+  echo <base64_auth_profiles> | base64 -d > /home/node/.openclaw/agents/main/agent/auth-profiles.json && \
+  node dist/index.js plugins enable telegram && \
+  node dist/index.js channels add --channel telegram --token \"$(cat /home/node/.openclaw/credentials/telegram/botToken)\" && \
+  node dist/index.js gateway --bind lan --port 3000"
 ```
 
-- `--bind lan`：綁定 0.0.0.0（必要，否則 Zeabur ingress 無法路由）
-- `--allow-unconfigured`：跳過 onboard 設定流程
-- Port 由 `OPENCLAW_GATEWAY_PORT` 控制（非 `--port` 參數）
-- Model 由 config 檔 `openclaw.json` 控制（`deploy.py` 會自動處理）
+- `--bind lan`：綁定 0.0.0.0（Zeabur ingress 必要）
+- `--port 3000`：Gateway 入口
+- AI/Telegram 金鑰會寫入檔案，不依賴 env 注入
+- 預設採用 long polling（Webhook 需自行提供公開 HTTPS）
 
 ### AI Provider 對照表
 
@@ -120,7 +127,7 @@ sh -c "mkdir -p /root/.openclaw && \
 
 ## 常見問題
 
-詳見 [03-deployment-guide.md](docs/03-deployment-guide.md) 的踩坑記錄。
+詳見 `DEPLOY_GUIDE.md` 的踩坑記錄與完整流程。
 
 ## 授權
 

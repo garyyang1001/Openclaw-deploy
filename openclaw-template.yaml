@@ -9,10 +9,10 @@ spec:
           template: PREBUILT
           spec:
             source:
-                image: ghcr.io/openclaw/openclaw:2026.2.2
+                image: ghcr.io/openclaw/openclaw:2026.2.9
             ports:
                 - id: web
-                  port: 3000
+                  port: 8787
                   type: HTTP
             env:
                 NODE_ENV:
