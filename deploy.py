@@ -28,6 +28,8 @@ except ImportError:
     sys.exit(1)
 
 API_URL = "https://api.zeabur.com/graphql"
+API_FALLBACK_URL = "https://api.zeabur.cn/graphql"
+ACTIVE_API_URL = API_URL
 OPENCLAW_IMAGE = "ghcr.io/openclaw/openclaw:2026.2.9"
 # Run gateway on 3000. Webhook listener (when enabled) binds to 8787.
 GATEWAY_CMD = "node dist/index.js gateway --bind lan --port 3000"
@@ -35,20 +37,44 @@ GATEWAY_CMD = "node dist/index.js gateway --bind lan --port 3000"
 
 def gql(token: str, query: str) -> dict:
     """Execute a GraphQL query against Zeabur API."""
-    r = requests.post(
-        API_URL,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        json={"query": query},
-        timeout=30,
-    )
-    r.raise_for_status()
-    data = r.json()
-    if "errors" in data:
-        raise RuntimeError(f"GraphQL error: {json.dumps(data['errors'], indent=2)}")
-    return data["data"]
+    global ACTIVE_API_URL
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    endpoints = [ACTIVE_API_URL]
+    if ACTIVE_API_URL != API_FALLBACK_URL:
+        endpoints.append(API_FALLBACK_URL)
+
+    last_error = None
+    for endpoint in endpoints:
+        try:
+            r = requests.post(
+                endpoint,
+                headers=headers,
+                json={"query": query},
+                timeout=30,
+            )
+            # Some networks block api.zeabur.com with Cloudflare 1010.
+            if r.status_code == 403 and "1010" in (r.text or "") and endpoint != API_FALLBACK_URL:
+                print(f"  Warning: Zeabur API blocked at {endpoint} (1010), retrying {API_FALLBACK_URL}")
+                continue
+            r.raise_for_status()
+            try:
+                data = r.json()
+            except ValueError:
+                raise RuntimeError(f"Invalid JSON response from Zeabur API ({endpoint}): {r.text[:300]}")
+            if "errors" in data:
+                raise RuntimeError(f"GraphQL error: {json.dumps(data['errors'], indent=2)}")
+            if endpoint != ACTIVE_API_URL:
+                ACTIVE_API_URL = endpoint
+                print(f"  Using Zeabur API endpoint: {ACTIVE_API_URL}")
+            return data["data"]
+        except Exception as e:
+            last_error = f"{endpoint}: {e}"
+            continue
+    raise RuntimeError(last_error or "Zeabur API request failed")
 
 
 def step(n: int, msg: str):
@@ -418,11 +444,11 @@ def set_start_command(
 
     # Write config via base64 (updateServiceConfig makes volume read-only)
     parts.append("mkdir -p /home/node/.openclaw")
-    parts.append(f"echo {config_b64} | base64 -d > /home/node/.openclaw/openclaw.json")
+    parts.append(f"printf %s {config_b64} | base64 -d > /home/node/.openclaw/openclaw.json")
     if telegram_token:
         token_b64 = base64.b64encode(telegram_token.encode()).decode()
         parts.append("mkdir -p /home/node/.openclaw/credentials/telegram")
-        parts.append(f"echo {token_b64} | base64 -d > /home/node/.openclaw/credentials/telegram/botToken")
+        parts.append(f"printf %s {token_b64} | base64 -d > /home/node/.openclaw/credentials/telegram/botToken")
     # Ensure auth profile exists for the default agent (required for model responses).
     provider_id = resolve_provider_id(ai_provider, config["agents"]["defaults"]["model"]["primary"])
     if provider_id and ai_key:
@@ -451,9 +477,10 @@ def set_start_command(
     gateway_cmd = GATEWAY_CMD
     if gateway_token:
         gateway_cmd = f"{GATEWAY_CMD} --token {gateway_token}"
-    gateway_block = " node dist/index.js plugins enable telegram || true;"
+    gateway_block = " node dist/index.js doctor --fix || true;"
+    gateway_block += " node dist/index.js plugins enable telegram || true;"
     if telegram_token:
-        gateway_block += " node dist/index.js channels add --channel telegram --token \"$(cat /home/node/.openclaw/credentials/telegram/botToken)\" || true;"
+        gateway_block += " node dist/index.js channels add --channel telegram --token \"${OPENCLAW_TELEGRAM_BOT_TOKEN:-$TELEGRAM_BOT_TOKEN}\" || true;"
     gateway_block += f" {gateway_cmd} & GW_PID=$!; sleep 3;"
     gateway_block += " wait $GW_PID"
     parts.append(f"({gateway_block})")
@@ -652,6 +679,8 @@ def main():
     args.service_id = os.environ.get("SERVICE_ID")
     args.environment_id = os.environ.get("ENVIRONMENT_ID")
     args.domain = os.environ.get("DOMAIN")
+    if args.service_id and args.service_id.startswith("service-"):
+        args.service_id = args.service_id.removeprefix("service-")
 
     if args.domain and args.telegram_webhook_path and not args.telegram_webhook_url:
         args.telegram_webhook_url = f"https://{args.domain}{args.telegram_webhook_path}"
