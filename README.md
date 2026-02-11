@@ -41,6 +41,20 @@ python deploy.py \
 - Telegram Bot 連結
 - Gateway Token（用於管理）
 
+## 客戶需提供的資料（部署前）
+
+**必填**
+1. Zeabur API Token（格式 `sk-xxx`）
+2. 專用伺服器已建立（Zeabur Dedicated Server）
+3. AI Provider API Key（擇一）
+4. Telegram Bot Token（@BotFather 取得）
+5. Telegram User ID（數字 ID，用於 allowlist）
+
+**可選**
+1. 子網域（`SUBDOMAIN`，不填會自動產生）
+2. Brave Search API Key（需要搜尋功能才填）
+3. Webhook 設定（只在要 webhook 時才需要）：`TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_SECRET` / `TELEGRAM_WEBHOOK_PATH`
+
 ## 專案結構
 
 ```
