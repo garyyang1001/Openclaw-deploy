@@ -22,7 +22,8 @@
   └─ [專用伺服器 (Dedicated Server)]
        └─ [K3s 叢集]
             └─ [OpenClaw Pod]
-                 ├─ Port 3000 (HTTP)
+                 ├─ Gateway 3000 (WS)
+                 ├─ Webhook 8787 (HTTP, webhook 模式才用)
                  ├─ Volume: /home/node/.openclaw
                  └─ 環境變數: Token, API Keys, Bind
 ```
@@ -77,10 +78,10 @@ spec:
           template: PREBUILT
           spec:
             source:
-                image: ghcr.io/openclaw/openclaw:2026.2.2
+                image: ghcr.io/openclaw/openclaw:2026.2.9
             ports:
                 - id: web
-                  port: 3000
+                  port: 8787
                   type: HTTP
             env:
                 NODE_ENV:
@@ -119,7 +120,11 @@ curl -s -X POST https://api.zeabur.com/graphql \
   -H "Content-Type: application/json" \
   -d '{"query":"mutation{createEnvironmentVariable(serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\",key:\"OPENCLAW_GATEWAY_PORT\",value:\"3000\"){key}}"}'
 
-# 3. AI API Key（依客戶選擇的模型）
+# 3. OpenClaw 路徑/安全設定
+curl -s -X POST ... key:\"OPENCLAW_HOME\",value:\"/home/node\"
+curl -s -X POST ... key:\"OPENCLAW_DISABLE_BONJOUR\",value:\"1\"
+
+# 4. AI API Key（依客戶選擇的模型）
 # Kimi Coding 國際版 (sk-kimi-* keys, 推薦):
 curl -s -X POST ... key:\"KIMI_API_KEY\",value:\"<KEY>\"
 # Moonshot Open Platform 中國版 (sk-* keys):
@@ -129,51 +134,16 @@ curl -s -X POST ... key:\"ANTHROPIC_API_KEY\",value:\"<KEY>\"
 # OpenAI:
 curl -s -X POST ... key:\"OPENAI_API_KEY\",value:\"<KEY>\"
 
-# 4. 通訊平台 Token（依客戶選擇的平台）
+# 5. 通訊平台 Token（依客戶選擇的平台）
 # Telegram:
 curl -s -X POST ... key:\"TELEGRAM_BOT_TOKEN\",value:\"<TOKEN>\"
+curl -s -X POST ... key:\"OPENCLAW_TELEGRAM_BOT_TOKEN\",value:\"<TOKEN>\"
+
+# 6. （選用）Webhook 相關
+# TELEGRAM_WEBHOOK_URL / SECRET / PATH 只有在 webhook 模式才需要
 ```
 
-### Step 6: 設定啟動指令（含 config 生成）
-
-啟動指令需要先產生 `openclaw.json` 設定檔來指定 AI 模型和 Telegram DM 策略，再啟動 gateway。
-
-**Kimi Coding 國際版（推薦，安全預設 allowlist）：**
-
-```bash
-# 啟動指令會自動生成設定檔（allowlist 限制只有指定用戶可以私訊）
-sh -c "mkdir -p /root/.openclaw && echo '{\"agents\":{\"defaults\":{\"model\":{\"primary\":\"kimi-coding/k2p5\"}}},\"channels\":{\"telegram\":{\"dmPolicy\":\"allowlist\",\"allowFrom\":[\"<TELEGRAM_USER_ID>\"]}}}' > /root/.openclaw/openclaw.json && node dist/index.js gateway --allow-unconfigured --bind lan"
-```
-
-> **安全提醒**：`<TELEGRAM_USER_ID>` 替換為客戶的 Telegram 數字 ID。預設使用 `allowlist` 策略，確保只有客戶本人可以使用 Bot，避免他人盜用 AI API 額度。
-
-**其他 AI Provider 範例：**
-
-| Provider | Model 值 | Env Var |
-|----------|----------|---------|
-| Kimi Coding 國際版 | `kimi-coding/k2p5` | `KIMI_API_KEY` |
-| Moonshot 中國版 | `moonshot/kimi-k2.5` | `MOONSHOT_API_KEY` |
-| Anthropic Claude | `anthropic/claude-sonnet-4-5` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
-
-使用 `deploy.py` 會自動根據 `--ai-provider` 參數產生正確的啟動指令。
-
-**關鍵參數說明：**
-- `--allow-unconfigured`：允許在沒有 onboard 設定的情況下啟動
-- `--bind lan`：綁定 0.0.0.0，讓 Zeabur ingress 可以路由流量
-- Port 3000 由 `OPENCLAW_GATEWAY_PORT` 環境變數控制（Dockerfile 預設 18789）
-- Model 和 DM 策略無法透過 env var 設定，必須透過 config 檔（`/root/.openclaw/openclaw.json`）
-
-### Step 7: 重啟服務
-
-```bash
-curl -s -X POST https://api.zeabur.com/graphql \
-  -H "Authorization: Bearer <ZEABUR_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"mutation{restartService(serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\")}"}'
-```
-
-### Step 8: 綁定域名
+### Step 6: 綁定域名（可選）
 
 先檢查可用性（`isGenerated: true` 時只傳子域名部分）：
 
@@ -193,7 +163,73 @@ curl -s -X POST https://api.zeabur.com/graphql \
   -d '{"query":"mutation{addDomain(serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\",isGenerated:true,domain:\"<SUBDOMAIN>\"){domain}}"}'
 ```
 
-### Step 9: 驗證部署
+### Step 7: 設定 Webhook 環境變數（選用）
+
+只有在需要 Telegram Webhook 時才設定（預設使用 long polling，不需要公開 HTTPS）：
+
+```bash
+curl -s -X POST https://api.zeabur.com/graphql \
+  -H "Authorization: Bearer <ZEABUR_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation{createEnvironmentVariable(serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\",key:\"TELEGRAM_WEBHOOK_URL\",value:\"https://<DOMAIN>/telegram-webhook\"){key}}"}'
+```
+
+### Step 8: 設定啟動指令（base64 config + auth-profiles + Telegram）
+
+啟動指令會：
+- 寫入 `openclaw.json`（模型與 DM 策略）
+- 寫入 Telegram botToken 檔案
+- 寫入 `auth-profiles.json`（AI API Key）
+- 啟用 Telegram plugin 並註冊 channel
+
+```bash
+sh -c "\
+  export OPENCLAW_HOME=/home/node && \
+  export OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json && \
+  export OPENCLAW_STATE_DIR=/home/node/.openclaw && \
+  export OPENCLAW_GATEWAY_TOKEN=<GATEWAY_TOKEN> && \
+  mkdir -p /home/node/.openclaw/credentials/telegram && \
+  mkdir -p /home/node/.openclaw/agents/main/agent && \
+  echo <base64_config> | base64 -d > /home/node/.openclaw/openclaw.json && \
+  echo <base64_bot_token> | base64 -d > /home/node/.openclaw/credentials/telegram/botToken && \
+  echo <base64_auth_profiles> | base64 -d > /home/node/.openclaw/agents/main/agent/auth-profiles.json && \
+  node dist/index.js plugins enable telegram && \
+  node dist/index.js channels add --channel telegram --token \"$(cat /home/node/.openclaw/credentials/telegram/botToken)\" && \
+  node dist/index.js gateway --bind lan --port 3000"
+```
+
+**關鍵說明：**
+- `--bind lan`：綁定 0.0.0.0，讓 Zeabur ingress 可以路由
+- `--port 3000`：Gateway 入口
+- Model / DM 策略只能透過 `openclaw.json` 設定
+- AI Key 需寫入 `auth-profiles.json`，避免 env 注入失敗
+
+**安全建議（寫在 config 內）：**
+- `channels.telegram.groupPolicy = "disabled"`（只允許私訊）
+- `channels.telegram.configWrites = false`（禁止 Telegram 指令改設定）
+
+### Step 9: 重啟服務
+
+```bash
+curl -s -X POST https://api.zeabur.com/graphql \
+  -H "Authorization: Bearer <ZEABUR_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation{restartService(serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\")}"}'
+```
+
+### Step 10: 設定 Telegram Webhook 或清除（預設 long polling）
+
+```bash
+# 啟用 Webhook
+curl -s -X POST https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook \
+  -d "url=https://<DOMAIN>/telegram-webhook"
+
+# 切回 long polling
+curl -s -X POST https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook \
+  -d "drop_pending_updates=true"
+```
+
+### Step 11: 驗證部署
 
 ```bash
 # 檢查服務狀態
@@ -208,14 +244,14 @@ curl -s -X POST https://api.zeabur.com/graphql \
   -H "Content-Type: application/json" \
   -d '{"query":"query{runtimeLogs(projectID:\"<PROJECT_ID>\",serviceID:\"<SERVICE_ID>\",environmentID:\"<ENV_ID>\"){message timestamp}}"}'
 
-# 驗證網頁可訪問
+# 驗證網頁可訪問（Webhook 模式才會有 HTTP 200）
 curl -s "https://<SUBDOMAIN>.zeabur.app/" -w "\nHTTP: %{http_code}\n"
 ```
 
 成功指標：
 - 服務狀態：`RUNNING`
 - 日誌中出現：`[gateway] listening on ws://0.0.0.0:3000`
-- 網頁回傳 HTTP 200 + OpenClaw Control UI
+- 若使用 long polling，網頁可能回 502，屬正常
 
 ## 踩坑記錄
 
@@ -290,7 +326,7 @@ curl -s "https://<SUBDOMAIN>.zeabur.app/" -w "\nHTTP: %{http_code}\n"
 | Service ID | `<from deployTemplate>` |
 | Environment ID | `<from deployTemplate>` |
 | Server ID | `<from servers query>` |
-| Image | `ghcr.io/openclaw/openclaw:2026.2.2` |
+| Image | `ghcr.io/openclaw/openclaw:2026.2.9` |
 | Gateway Port | 3000 |
 | Gateway Bind | 0.0.0.0 (lan) |
-| Start Command | `node dist/index.js gateway --allow-unconfigured --bind lan` |
+| Start Command | `node dist/index.js gateway --bind lan --port 3000` |

@@ -1,6 +1,7 @@
 # Environment files with secrets
 .env
 .env.*
+.env cshhh_h
 *.env.local
 
 # Python
